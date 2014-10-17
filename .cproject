@@ -23,6 +23,7 @@
 									<listOptionValue builtIn="false" value="&quot;${ProjDirPath}&quot;"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.other.other.777814798" name="Other flags" superClass="gnu.cpp.compiler.option.other.other" value="-c -fmessage-length=0 --std=c++11" valueType="string"/>
+								<option id="gnu.cpp.compiler.option.optimization.level.775077778" name="Optimization Level" superClass="gnu.cpp.compiler.option.optimization.level" value="gnu.cpp.compiler.optimization.level.none" valueType="enumerated"/>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.161632679" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.c.compiler.base.601901510" name="GCC C Compiler" superClass="cdt.managedbuild.tool.gnu.c.compiler.base">
@@ -30,6 +31,9 @@
 							</tool>
 							<tool id="cdt.managedbuild.tool.gnu.c.linker.base.1019331609" name="GCC C Linker" superClass="cdt.managedbuild.tool.gnu.c.linker.base"/>
 							<tool id="cdt.managedbuild.tool.gnu.cpp.linker.base.1378449031" name="GCC C++ Linker" superClass="cdt.managedbuild.tool.gnu.cpp.linker.base">
+								<option id="gnu.cpp.link.option.libs.1174833759" superClass="gnu.cpp.link.option.libs" valueType="libs">
+									<listOptionValue builtIn="false" value="pthread"/>
+								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.197195862" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
 									<additionalInput kind="additionalinput" paths="$(LIBS)"/>

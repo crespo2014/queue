@@ -106,7 +106,7 @@ class Queue
             count = 0;
             dropped = 0;
             // the read pointer is move to next position, block keep locked by reader
-            if (rd_block_->wr_pos_ - rd_pos_ == 0)
+            if (rd_block_->wr_pos_ == rd_pos_)
             {
                 if (rd_block_->next_ != nullptr)
                 {
@@ -140,7 +140,7 @@ class Queue
         void close()
         {
             closed_ = true;
-            queue_.notify();
+            queue_.cv_.notify_all();
         }
         /**
          * Move reader to next block
@@ -168,10 +168,8 @@ public:
      */
     Queue() : waiters_(0)
     {
-        (*blocks_).next_ = nullptr;
         Block* pblock = blocks_ + 1;
-        ;
-        for (unsigned i = N - 1; i != 0; --i)
+        for (unsigned i = N - 2; i != 0; --i)  //@todo min number of block is 3
         {
             pblock->next_ = pblock + 1;
             ++pblock;
@@ -231,6 +229,8 @@ public:
                 tmp = tmp->next_;
             }
         }
+        if (done)
+            wr_block_ = wr_block_->next_;
         return done;
     }
     /**
@@ -253,7 +253,7 @@ public:
      */
     void Commit(size_t count)
     {
-        assert(wr_block_->wr_pos_ + count < M);
+        assert(wr_block_->wr_pos_ + count <= M);
         wr_block_->wr_pos_ += count;
         //signal all waiting readers
         if (waiters_)
