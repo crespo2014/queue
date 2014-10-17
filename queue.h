@@ -12,6 +12,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <cassert>
+#include <atomic>
 
 /**
  * Multiples consumers one producer queue
@@ -35,14 +36,15 @@ class Queue
     class Block
     {
     public:
-        unsigned dropped_;   ///< how many data has been dropped between this block and the next
-        unsigned readers_;   ///< how many client are reading from this block
-        unsigned wr_pos_;   ///< next position to be written by the producer
-        T data_[M];         ///< elements on this block
-        Block* next_;      ///< next block on the list,
+        unsigned dropped_ = 0;                  ///< how many data has been dropped between this block and the next
+        std::atomic<unsigned> readers_{0};      ///< how many client are reading from this block
+        volatile unsigned wr_pos_ = 0;          ///< next position to be written by the producer
+        T data_[M];                             ///< elements on this block
+        Block* next_ = nullptr;                 ///< next block on the list,
     };
     /**
      * Reader is object with information about a specific reader on the queue
+     * @todo reader need a condition function to be validate inside wait to interup wait
      */
     class Reader
     {
@@ -55,6 +57,7 @@ class Queue
         Queue<T, N, M>& queue_;     ///< queue for read
         Block* rd_block_;           ///< current reading block
         unsigned rd_pos_;           ///<current read position
+        bool closed_ = false;       ///< the current reader is been close
     public:
         /**
          * Move constructor implementation
@@ -75,7 +78,7 @@ class Queue
             std::lock_guard < std::mutex > lock(queue_.mutex_);
             rd_block_ = queue_.begin_;      // start reading from the begging of the queue. some data will be send again on  connections lost
             rd_pos_ = 0;
-            rd_block_->readers_++;
+            rd_block_->readers_++;          // it is not possible lock a block outside mutex because producer would be in this block
         }
         /**
          * Reader destructor. decrement reader counter to release the block
@@ -85,8 +88,7 @@ class Queue
         {
             if (rd_block_ != nullptr)
             {
-                std::lock_guard < std::mutex > lock(queue_.mutex_);
-                rd_block_->readers_--;
+                rd_block_->readers_--;  // there is not problem removing reader outside mutex, operation is atomic
             }
         }
         /**
@@ -97,6 +99,7 @@ class Queue
          */
         T* get(size_t& count, size_t& dropped)
         {
+            count = 0;
             dropped = 0;
             // the read pointer is move to next position, block keep locked by reader
             if (rd_block_->wr_pos_ - rd_pos_ == 0)
@@ -106,7 +109,8 @@ class Queue
                     dropped = rd_block_->dropped_;
                     gotoNext();
                 }
-                waitData();
+                if (rd_block_->wr_pos_ == rd_pos_)
+                    waitData();
             }
             count = rd_block_->wr_pos_ - rd_pos_;
             T* ret = rd_block_->data_ + rd_pos_;
@@ -118,13 +122,21 @@ class Queue
          */
         void waitData()
         {
-            if (rd_block_->wr_pos_ - rd_pos_ == 0)
+            std::lock_guard < std::mutex > lock(queue_.mutex_);
+            if (!closed_ && rd_block_->wr_pos_ == rd_pos_)
             {
-                std::lock_guard < std::mutex > lock(queue_.mutex_);
                 waiters_++;
                 cv_.wait(queue_.mutex_);
                 waiters_--;
             }
+        }
+        /**
+         * Close this reader that means, exit from wait condition
+         */
+        void close()
+        {
+            closed_ = true;
+            queue_.notify();
         }
 
     };
@@ -232,6 +244,14 @@ public:
         //signal all waiting readers
         if (waiters_)
             cv_.notify_all();
+    }
+    /**
+     * Send a notification to all clients
+     */
+    void notify()
+    {
+        std::lock_guard < std::mutex > lock(mutex_);
+        cv_.notify_all();
     }
 };
 
