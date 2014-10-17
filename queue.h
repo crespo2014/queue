@@ -87,6 +87,16 @@ class Queue
                 rd_block_->readers_--;
             }
         }
+        /**
+         * wait and a block of data from the queue
+         * @param [out] count - number total of elements available
+         * @return null if a signal is produce without data
+         */
+        T* get(size_t& count)
+        {
+            // the red pointer is move to next position, block keep locked by reader
+        }
+
     };
     bool waiting_ = false;      ///< true if there is a consumer waiting for more data.
     std::mutex mutex_; ///< mutex use to mutual exclusion when moving to the next element on the list
@@ -128,6 +138,7 @@ public:
      */
     bool gotoNextFreeBlock()
     {
+        bool done = true;
         Block* tmp;
         std::lock_guard<std::mutex> lock(mutex_);
         // try in the free list
@@ -145,9 +156,24 @@ public:
             begin_ = tmp;
         } else
         {
+            done = false;
             tmp = begin_;
+            while ((tmp->next_ != nullptr) && (tmp->next_->next != nullptr))    //there is more elements and is not the last
+            {
+                // if the next element does not have readers the use it
+                if (tmp->next_->readers == 0)
+                {
+                    Block* c = tmp->next_->next;
+                    tmp->dropped_ += tmp->next_->wr_pos;
+                    initWritter(*tmp->next_);
+                    tmp->next_ = c;
+                    done = true;
+                    break;
+                }
+                tmp = tmp->next_;
+            }
         }
-        return true;
+        return done;
     }
 };
 
