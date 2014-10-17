@@ -10,6 +10,8 @@
 
 #include <exception>
 #include <mutex>
+#include <condition_variable>
+#include <cassert>
 
 /**
  * Multiples consumers one producer queue
@@ -70,7 +72,7 @@ class Queue
                 queue_(queue)
         {
             // to start reading from a block or to move to a new one we need to get a lock
-            std::lock_guard<std::mutex> lock(queue_.mutex_);
+            std::lock_guard < std::mutex > lock(queue_.mutex_);
             rd_block_ = queue_.begin_;      // start reading from the begging of the queue. some data will be send again on  connections lost
             rd_pos_ = 0;
             rd_block_->readers_++;
@@ -83,22 +85,51 @@ class Queue
         {
             if (rd_block_ != nullptr)
             {
-                std::lock_guard<std::mutex> lock(queue_.mutex_);
+                std::lock_guard < std::mutex > lock(queue_.mutex_);
                 rd_block_->readers_--;
             }
         }
         /**
          * wait and a block of data from the queue
          * @param [out] count - number total of elements available
+         * @param [out] dropped - number of bytes been dropped
          * @return null if a signal is produce without data
          */
-        T* get(size_t& count)
+        T* get(size_t& count, size_t& dropped)
         {
-            // the red pointer is move to next position, block keep locked by reader
+            dropped = 0;
+            // the read pointer is move to next position, block keep locked by reader
+            if (rd_block_->wr_pos_ - rd_pos_ == 0)
+            {
+                if (rd_block_->next_ != nullptr)
+                {
+                    dropped = rd_block_->dropped_;
+                    gotoNext();
+                }
+                waitData();
+            }
+            count = rd_block_->wr_pos_ - rd_pos_;
+            T* ret = rd_block_->data_ + rd_pos_;
+            rd_pos_ += count;
+            return ret;
+        }
+        /**
+         * Wait for data become available
+         */
+        void waitData()
+        {
+            if (rd_block_->wr_pos_ - rd_pos_ == 0)
+            {
+                std::lock_guard < std::mutex > lock(queue_.mutex_);
+                waiters_++;
+                cv_.wait(queue_.mutex_);
+                waiters_--;
+            }
         }
 
     };
-    bool waiting_ = false;      ///< true if there is a consumer waiting for more data.
+    volatile unsigned waiters_ = 0;      ///< how many readers are waiting for more data.
+    std::condition_variable cv_;    ///< condition variable to be notify when new data is produce
     std::mutex mutex_; ///< mutex use to mutual exclusion when moving to the next element on the list
     Block blocks_[N]; ///< memory block containing all data
     Block* begin_ = blocks_;     ///< first full block on the list.
@@ -140,7 +171,7 @@ public:
     {
         bool done = true;
         Block* tmp;
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard < std::mutex > lock(mutex_);
         // try in the free list
         if (free_ != nullptr)
         {
@@ -154,13 +185,14 @@ public:
             tmp = begin_->next_;
             initWritter(*begin_);
             begin_ = tmp;
-        } else
+        }
+        else
         {
             done = false;
             tmp = begin_;
             while ((tmp->next_ != nullptr) && (tmp->next_->next != nullptr))    //there is more elements and is not the last
             {
-                // if the next element does not have readers the use it
+                // if the next element does not have readers then use it
                 if (tmp->next_->readers == 0)
                 {
                     Block* c = tmp->next_->next;
@@ -174,6 +206,32 @@ public:
             }
         }
         return done;
+    }
+    /**
+     * Get a free block of data
+     * @param [in] count - max elements requested
+     */
+    T* get(size_t count)
+    {
+        assert(count <= M);
+        if (wr_block_->wr_pos_ + count > M)
+        {
+            if (!gotoNextFreeBlock())
+                return nullptr;
+        }
+        return wr_block_->data_ + wr_block_->wr_pos_;
+    }
+    /**
+     * Commit data already written. this functions is call after get
+     * @param [in] count - how many data has been written
+     */
+    void Commit(size_t count)
+    {
+        assert(wr_block_->wr_pos_ + count < M);
+        wr_block_->wr_pos_ += count;
+        //signal all waiting readers
+        if (waiters_)
+            cv_.notify_all();
     }
 };
 
