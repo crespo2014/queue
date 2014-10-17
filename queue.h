@@ -36,6 +36,45 @@ class Queue {
         T data_[M];         ///< elements on this block
         Block* next_;      ///< next block on the list,
     };
+    /**
+     * Reader is object with information about a specific reader on the queue
+     */
+    class Reader {
+        Reader(const Reader&) = delete;
+        Reader& operator=(const Reader&) = delete;
+        Queue<T, N, M>& queue_;     ///< queue for read
+        Block* rd_block_;           ///< current reading block
+        unsigned rd_pos_;           ///<current read position
+    public:
+        /**
+         * Move constructor implementation
+         */
+        Reader(Reader&& r)
+                : queue_(r.queue_), rd_block_(r.rd_block_), rd_pos_(r.rd_pos_) {
+
+        }
+        /**
+         * Construct a new reader from queue
+         * @todo flow diagram
+         */
+        Reader(Queue<T, N, M>& queue) :queue_(queue)
+        {
+            // to start reading from a block or to move to a new one we need to get a lock
+            std::lock_guard<std::mutex> lock(queue_.mutex_);
+            rd_block_ = queue_.begin_;      // start reading from the begging of the queue. some data will be send again on  connections lost
+            rd_pos_ = 0;
+            rd_block_->readers_++;
+        }
+        /**
+         * Reader destructor. decrement reader counter to release the block
+         * a exception could be throw in this destructor it is not a good idea, but
+         */
+        ~Reader()
+        {
+            std::lock_guard<std::mutex> lock(queue_.mutex_);
+            rd_block_->readers_--;
+        }
+    };
     bool waiting_ = false;      ///< true if there is a consumer waiting for more data.
     std::mutex mutex_; ///< mutex use to mutual exclusion when moving to the next element on the list
     Block blocks_[N]; ///< memory block containing all data
@@ -49,9 +88,9 @@ public:
      */
     Queue() {
         (*blocks_).next_ = nullptr;
-        Block* pblock = blocks_ + 1;;
-        for (unsigned i=N-1;i!=0;--i)
-        {
+        Block* pblock = blocks_ + 1;
+        ;
+        for (unsigned i = N - 1; i != 0; --i) {
             pblock->next_ = pblock + 1;
             ++pblock;
         }
@@ -59,10 +98,9 @@ public:
         initWritter(wr_block_);
     }
     /**
-     * Initialize a block for start writting
+     * Initialize a block for start writting on it
      */
-    void initWritter(Block& b)
-    {
+    void initWritter(Block& b) {
         b.dropped_ = 0;
         b.readers_ = 0;
         b.wr_pos_ = 0;
