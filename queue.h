@@ -37,10 +37,14 @@ class Queue
     {
     public:
         unsigned dropped_ = 0;                  ///< how many data has been dropped between this block and the next
-        std::atomic<unsigned> readers_{0};      ///< how many client are reading from this block
+        std::atomic<unsigned> readers_;      ///< how many client are reading from this block
         volatile unsigned wr_pos_ = 0;          ///< next position to be written by the producer
         T data_[M];                             ///< elements on this block
         Block* next_ = nullptr;                 ///< next block on the list,
+        Block() : readers_(0)
+        {
+
+        }
     };
     /**
      * Reader is object with information about a specific reader on the queue
@@ -122,12 +126,12 @@ class Queue
          */
         void waitData()
         {
-            std::lock_guard < std::mutex > lock(queue_.mutex_);
+            std::unique_lock < std::mutex > lock(queue_.mutex_);
             if (!closed_ && rd_block_->wr_pos_ == rd_pos_)
             {
-                waiters_++;
-                cv_.wait(queue_.mutex_);
-                waiters_--;
+                queue_.waiters_++;
+                queue_.cv_.wait(lock);
+                queue_.waiters_--;
             }
         }
         /**
@@ -138,9 +142,19 @@ class Queue
             closed_ = true;
             queue_.notify();
         }
-
+        /**
+         * Move reader to next block
+         */
+        void gotoNext()
+        {
+            std::lock_guard < std::mutex > lock(queue_.mutex_);
+            rd_block_->readers_--;
+            rd_block_ = rd_block_->next_;
+            rd_block_->readers_++;
+            rd_pos_ = 0;
+        }
     };
-    volatile unsigned waiters_ = 0;      ///< how many readers are waiting for more data.
+    volatile unsigned waiters_ ;      ///< how many readers are waiting for more data.
     std::condition_variable cv_;    ///< condition variable to be notify when new data is produce
     std::mutex mutex_; ///< mutex use to mutual exclusion when moving to the next element on the list
     Block blocks_[N]; ///< memory block containing all data
@@ -152,7 +166,7 @@ public:
      * Constructor
      * Write pointer is initialise to the first block, rest of the block will be on free list
      */
-    Queue()
+    Queue() : waiters_(0)
     {
         (*blocks_).next_ = nullptr;
         Block* pblock = blocks_ + 1;
@@ -163,7 +177,7 @@ public:
             ++pblock;
         }
         pblock->next_ = nullptr;    //last block point to null
-        initWritter(wr_block_);
+        initWritter(*wr_block_);
     }
     /**
      * Initialize a block for start writting on it
@@ -202,13 +216,13 @@ public:
         {
             done = false;
             tmp = begin_;
-            while ((tmp->next_ != nullptr) && (tmp->next_->next != nullptr))    //there is more elements and is not the last
+            while ((tmp->next_ != nullptr) && (tmp->next_->next_ != nullptr))    //there is more elements and is not the last
             {
                 // if the next element does not have readers then use it
-                if (tmp->next_->readers == 0)
+                if (tmp->next_->readers_ == 0)
                 {
-                    Block* c = tmp->next_->next;
-                    tmp->dropped_ += tmp->next_->wr_pos;
+                    Block* c = tmp->next_->next_;
+                    tmp->dropped_ += tmp->next_->wr_pos_;
                     initWritter(*tmp->next_);
                     tmp->next_ = c;
                     done = true;
@@ -244,6 +258,13 @@ public:
         //signal all waiting readers
         if (waiters_)
             cv_.notify_all();
+    }
+    /**
+     * Get a reader for this queue
+     */
+    Reader getReader()
+    {
+        return {*this};
     }
 };
 
