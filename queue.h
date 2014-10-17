@@ -245,14 +245,6 @@ public:
         if (waiters_)
             cv_.notify_all();
     }
-    /**
-     * Send a notification to all clients
-     */
-    void notify()
-    {
-        std::lock_guard < std::mutex > lock(mutex_);
-        cv_.notify_all();
-    }
 };
 
 #endif /* QUEUE_H_ */
