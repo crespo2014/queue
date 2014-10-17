@@ -17,18 +17,21 @@
  *
  */
 template<class T, int N = 10, int M = 100>
-class Queue {
+class Queue
+{
     /**
      * Produce when the required space can not be supplied because is > M
      */
-    class out_of_space : public std::exception {
+    class out_of_space: public std::exception
+    {
 
     };
     /**
      * Block of data
      * All block will be part of a single link list.
      */
-    class Block {
+    class Block
+    {
     public:
         unsigned dropped_;   ///< how many data has been dropped between this block and the next
         unsigned readers_;   ///< how many client are reading from this block
@@ -39,9 +42,14 @@ class Queue {
     /**
      * Reader is object with information about a specific reader on the queue
      */
-    class Reader {
+    class Reader
+    {
+        /// copy constructor not allowed
         Reader(const Reader&) = delete;
+        /// assignment  not allowed
         Reader& operator=(const Reader&) = delete;
+        /// move assignment  not allowed
+        Reader& operator==(Reader&& r) = delete;
         Queue<T, N, M>& queue_;     ///< queue for read
         Block* rd_block_;           ///< current reading block
         unsigned rd_pos_;           ///<current read position
@@ -49,15 +57,17 @@ class Queue {
         /**
          * Move constructor implementation
          */
-        Reader(Reader&& r)
-                : queue_(r.queue_), rd_block_(r.rd_block_), rd_pos_(r.rd_pos_) {
-
+        Reader(Reader&& r) :
+                queue_(r.queue_), rd_block_(r.rd_block_), rd_pos_(r.rd_pos_)
+        {
+            r.rd_block_ = nullptr;
         }
         /**
          * Construct a new reader from queue
          * @todo flow diagram
          */
-        Reader(Queue<T, N, M>& queue) :queue_(queue)
+        Reader(Queue<T, N, M>& queue) :
+                queue_(queue)
         {
             // to start reading from a block or to move to a new one we need to get a lock
             std::lock_guard<std::mutex> lock(queue_.mutex_);
@@ -71,8 +81,11 @@ class Queue {
          */
         ~Reader()
         {
-            std::lock_guard<std::mutex> lock(queue_.mutex_);
-            rd_block_->readers_--;
+            if (rd_block_ != nullptr)
+            {
+                std::lock_guard<std::mutex> lock(queue_.mutex_);
+                rd_block_->readers_--;
+            }
         }
     };
     bool waiting_ = false;      ///< true if there is a consumer waiting for more data.
@@ -86,11 +99,13 @@ public:
      * Constructor
      * Write pointer is initialise to the first block, rest of the block will be on free list
      */
-    Queue() {
+    Queue()
+    {
         (*blocks_).next_ = nullptr;
         Block* pblock = blocks_ + 1;
         ;
-        for (unsigned i = N - 1; i != 0; --i) {
+        for (unsigned i = N - 1; i != 0; --i)
+        {
             pblock->next_ = pblock + 1;
             ++pblock;
         }
@@ -100,11 +115,39 @@ public:
     /**
      * Initialize a block for start writting on it
      */
-    void initWritter(Block& b) {
+    void initWritter(Block& b)
+    {
         b.dropped_ = 0;
         b.readers_ = 0;
         b.wr_pos_ = 0;
         b.next_ = nullptr;
+    }
+    /**
+     * Get a free block.
+     * Current writing block will point to a new free block
+     */
+    bool gotoNextFreeBlock()
+    {
+        Block* tmp;
+        std::lock_guard<std::mutex> lock(mutex_);
+        // try in the free list
+        if (free_ != nullptr)
+        {
+            tmp = free_->next_;
+            initWritter(*free_);
+            wr_block_->next_ = free_;
+            free_ = tmp;
+        } // find a block without readers
+        else if (begin_->readers_ == 0) //try the first block
+        {
+            tmp = begin_->next_;
+            initWritter(*begin_);
+            begin_ = tmp;
+        } else
+        {
+            tmp = begin_;
+        }
+        return true;
     }
 };
 
