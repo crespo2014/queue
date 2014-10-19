@@ -72,9 +72,8 @@ TEST(queue,all)
 
     q.stat(std::cout);
 
-    q.Commit(5);    // fill up block 3
     // try to produce more data with all block lock
-    CHECK(q.get(1) == nullptr);
+    CHECK(q.get(5) == nullptr);
 
     q.stat(std::cout);
 
