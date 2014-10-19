@@ -13,7 +13,7 @@
 #include <condition_variable>
 #include <cassert>
 #include <atomic>
-
+#include <ostream>
 /**
  * Multiples consumers one producer queue
  * The queue is split in N blocks containing M elements of type T
@@ -41,7 +41,8 @@ class Queue
         volatile unsigned wr_pos_ = 0;          ///< next position to be written by the producer
         T data_[M];                             ///< elements on this block
         Block* next_ = nullptr;                 ///< next block on the list,
-        Block() : readers_(0)
+        Block() :
+                readers_(0)
         {
 
         }
@@ -79,7 +80,7 @@ class Queue
                 queue_(queue)
         {
             // to start reading from a block or to move to a new one we need to get a lock
-            std::lock_guard < std::mutex > lock(queue_.mutex_);
+            std::lock_guard<std::mutex> lock(queue_.mutex_);
             rd_block_ = queue_.begin_;      // start reading from the begging of the queue. some data will be send again on  connections lost
             rd_pos_ = 0;
             rd_block_->readers_++;          // it is not possible lock a block outside mutex because producer would be in this block
@@ -126,7 +127,7 @@ class Queue
          */
         void waitData()
         {
-            std::unique_lock < std::mutex > lock(queue_.mutex_);
+            std::unique_lock<std::mutex> lock(queue_.mutex_);
             if (!closed_ && rd_block_->wr_pos_ == rd_pos_)
             {
                 queue_.waiters_++;
@@ -147,14 +148,14 @@ class Queue
          */
         void gotoNext()
         {
-            std::lock_guard < std::mutex > lock(queue_.mutex_);
+            std::lock_guard<std::mutex> lock(queue_.mutex_);
             rd_block_->readers_--;
             rd_block_ = rd_block_->next_;
             rd_block_->readers_++;
             rd_pos_ = 0;
         }
     };
-    volatile unsigned waiters_ ;      ///< how many readers are waiting for more data.
+    volatile unsigned waiters_;      ///< how many readers are waiting for more data.
     std::condition_variable cv_;    ///< condition variable to be notify when new data is produce
     std::mutex mutex_; ///< mutex use to mutual exclusion when moving to the next element on the list
     Block blocks_[N]; ///< memory block containing all data
@@ -166,11 +167,13 @@ public:
      * Constructor
      * Write pointer is initialise to the first block, rest of the block will be on free list
      */
-    Queue() : waiters_(0)
+    Queue() :
+            waiters_(0)
     {
-        for (unsigned i = 1; i +1 < N; ++i)  //@todo min number of block is 3
+        assert(N > 1);
+        for (unsigned i = 1; i + 1 < N; ++i)
         {
-            blocks_[i].next_ = &blocks_[i+1];
+            blocks_[i].next_ = &blocks_[i + 1];
         }
         initWritter(*wr_block_);
     }
@@ -192,15 +195,14 @@ public:
     {
         bool done = true;
         Block* tmp;
-        std::lock_guard < std::mutex > lock(mutex_);
+        std::lock_guard<std::mutex> lock(mutex_);
         // try in the free list
         if (free_ != nullptr)
         {
-            tmp = free_->next_;
-            initWritter(*free_);
             wr_block_->next_ = free_;
-            wr_block_ = free_;
-            free_ = tmp;
+            wr_block_ = wr_block_->next_;
+            free_ = free_->next_;
+            initWritter(*wr_block_);
         } // find a block without readers
         else if (begin_->readers_ == 0) //try the first block
         {
@@ -262,7 +264,40 @@ public:
      */
     Reader getReader()
     {
-        return {*this};
+        return
+        {   *this};
+    }
+    /**
+     * print out stats of the queue
+     */
+    std::ostream & stat(std::ostream & os)
+    {
+        os << N << " Blocks " << M << " items per block " << std::endl;
+        unsigned c = 0;
+        Block* p;
+        p = free_;
+        while (p)
+        {
+            p = p->next_;
+            c++;
+        }
+        if (c != 0)
+            os << c << " frees " << std::endl;
+        p = begin_;
+        c = 0;
+        while (p)
+        {
+            c++;
+            os << c << " " << p->wr_pos_ << " items ";
+            if (p->readers_ != 0)
+                os << std::endl << " " << p->readers_ << " readers ";
+            if (p->dropped_ != 0)
+                os << std::endl << " " << p->dropped_ << " items drop ";
+            p = p->next_;
+            os << std::endl;
+        }
+
+        return os;
     }
 };
 
