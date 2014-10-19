@@ -168,13 +168,10 @@ public:
      */
     Queue() : waiters_(0)
     {
-        Block* pblock = blocks_ + 1;
-        for (unsigned i = N - 2; i != 0; --i)  //@todo min number of block is 3
+        for (unsigned i = 1; i +1 < N; ++i)  //@todo min number of block is 3
         {
-            pblock->next_ = pblock + 1;
-            ++pblock;
+            blocks_[i].next_ = &blocks_[i+1];
         }
-        pblock->next_ = nullptr;    //last block point to null
         initWritter(*wr_block_);
     }
     /**
@@ -202,13 +199,15 @@ public:
             tmp = free_->next_;
             initWritter(*free_);
             wr_block_->next_ = free_;
+            wr_block_ = free_;
             free_ = tmp;
         } // find a block without readers
         else if (begin_->readers_ == 0) //try the first block
         {
-            tmp = begin_->next_;
-            initWritter(*begin_);
-            begin_ = tmp;
+            wr_block_->next_ = begin_;
+            wr_block_ = wr_block_->next_;
+            begin_ = begin_->next_;
+            initWritter(*wr_block_);
         }
         else
         {
@@ -219,18 +218,17 @@ public:
                 // if the next element does not have readers then use it
                 if (tmp->next_->readers_ == 0)
                 {
-                    Block* c = tmp->next_->next_;
+                    wr_block_->next_ = tmp->next_;
+                    wr_block_ = wr_block_->next_;
                     tmp->dropped_ += tmp->next_->wr_pos_;
-                    initWritter(*tmp->next_);
-                    tmp->next_ = c;
+                    tmp->next_ = tmp->next_->next_;
+                    initWritter(*wr_block_);
                     done = true;
                     break;
                 }
                 tmp = tmp->next_;
             }
         }
-        if (done)
-            wr_block_ = wr_block_->next_;
         return done;
     }
     /**
