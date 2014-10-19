@@ -22,14 +22,14 @@ TEST_GROUP(queue)
 
 };
 
-TEST(queue,all)
+TEST(queue,droped)
 {
     size_t count, drop;
     Queue<char, 3, 5> q;
     auto r1 = q.getReader();
     auto r2 = q.getReader();
     auto r3 = q.getReader();
-    q.stat(std::cout);
+
     CHECK(q.get(1) != nullptr);
     q.Commit(5);    // one block full
     CHECK(q.get(1) != nullptr);
@@ -39,72 +39,94 @@ TEST(queue,all)
     CHECK(q.get(2) != nullptr);     // 5 drops for readers
     q.Commit(2);
 
-    q.stat(std::cout);
+    CHECK(r1.get(count, drop) != nullptr);  //read b 1
+    CHECK(count == 5);
+    CHECK(drop == 0);
+
+    CHECK(r1.get(count, drop) != nullptr);
+    CHECK(count == 5);
+    CHECK(drop == 5);
+
+    CHECK(r2.get(count, drop) != nullptr);  //read b 1
+    CHECK(count == 5);
+    CHECK(drop == 0);
+
+    CHECK(r2.get(count, drop) != nullptr);
+    CHECK(count == 5);
+    CHECK(drop == 5);
+
+    CHECK(r3.get(count, drop) != nullptr);  //read b 1
+    CHECK(count == 5);
+    CHECK(drop == 0);
+
+    CHECK(r3.get(count, drop) != nullptr);
+    CHECK(count == 5);
+    CHECK(drop == 5);
+}
+
+TEST(queue,full)
+{
+    size_t count, drop;
+    Queue<char, 3, 5> q;
+    auto r1 = q.getReader();
+    auto r2 = q.getReader();
+    auto r3 = q.getReader();
+
+    CHECK(q.get(1) != nullptr);
+    q.Commit(5);    // one block full
+    CHECK(q.get(1) != nullptr);
+    q.Commit(5);    // two block full
+    CHECK(q.get(1) != nullptr);
+    q.Commit(5);    // 3 block full
 
     CHECK(r1.get(count, drop) != nullptr);  //read b 1
     CHECK(count == 5);
     CHECK(drop == 0);
 
-    q.stat(std::cout);
+    CHECK(r1.get(count, drop) != nullptr);
+    CHECK(count == 5);
+    CHECK(drop == 0);
 
     CHECK(r1.get(count, drop) != nullptr);
     CHECK(count == 5);
-    CHECK(drop == 5);
-
-    q.stat(std::cout);
-
-    CHECK(r1.get(count, drop) != nullptr);
-    CHECK(count == 2);
     CHECK(drop == 0);
-
-    q.stat(std::cout);
 
     CHECK(r2.get(count, drop) != nullptr);      //read 1
     CHECK(count == 5);
     CHECK(drop == 0);
 
-    q.stat(std::cout);
-
     //move reader to to second block
     CHECK(r2.get(count, drop) != nullptr); // go to 2 get 5 drop
     CHECK(count == 5);
-    CHECK(drop == 5);
-
-    q.stat(std::cout);
+    CHECK(drop == 0);
 
     // try to produce more data with all block lock
     CHECK(q.get(5) == nullptr);
 
-    q.stat(std::cout);
-
-    // move r2 to block 3
-    CHECK(r2.get(count, drop) != nullptr);
+    //make room
+    CHECK(r2.get(count, drop) != nullptr); // go to 2 get 5 drop
     CHECK(count == 5);
     CHECK(drop == 0);
 
-    q.stat(std::cout);
+    // try to produce more data with all block lock
+    CHECK(q.get(5) != nullptr);
 
-    // produce more data and r3 will lost block 2
+}
+;
 
-    //move r3 to block 2
-    CHECK(r3.get(count, drop) != nullptr);
-    CHECK(count == 5);
-    CHECK(drop == 0);
+TEST(queue,close_reader)
+{
+    size_t count, drop;
+    Queue<char, 3, 5> q;
 
-    CHECK(r3.get(count, drop) != nullptr);
-    CHECK(count == 5);
-    CHECK(drop == 0);
+    auto r1 = q.getReader();
 
     std::thread t([&]()
     {   sleep(2);r1.close();});
     r1.get(count, drop);
     CHECK(count == 0);
     t.join();
-
-    std::cout << "." << std::endl;
-
 }
-;
 
 #ifdef CPP_UTEST
 int main(int ac, char** av)
