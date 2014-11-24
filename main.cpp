@@ -112,7 +112,7 @@ TEST(queue,full)
     CHECK(q.get(5) != nullptr);
 
 }
-;
+
 
 TEST(queue,close_reader)
 {

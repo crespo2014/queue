@@ -28,7 +28,7 @@
 								<option id="gnu.cpp.compiler.option.preprocessor.def.1919951749" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="CPP_UTEST"/>
 								</option>
-								<option id="gnu.cpp.compiler.option.include.files.144561230" superClass="gnu.cpp.compiler.option.include.files" valueType="includeFiles">
+								<option id="gnu.cpp.compiler.option.include.files.144561230" name="Include files (-include)" superClass="gnu.cpp.compiler.option.include.files" valueType="includeFiles">
 									<listOptionValue builtIn="false" value="CppUTest/MemoryLeakDetectorNewMacros.h"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.161632679" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
@@ -79,4 +79,5 @@
 		</scannerConfigBuildInfo>
 	</storageModule>
 	<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
+	<storageModule moduleId="org.eclipse.cdt.make.core.buildtargets"/>
 </cproject>
