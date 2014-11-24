@@ -519,4 +519,56 @@ public:
     }
 };
 
+/**
+ * Queue interface
+ */
+class IQueue
+{
+    class Block
+    {
+        const uint8_t* const ptr;
+        const size_t len;
+    };
+public:
+    void StartReader();
+    void EndReader();
+    bool Allocate(size_t len);
+    void write(void* d,size_t len);
+    void Commit();
+    void RollBack();
+    Block peek();
+    void get(Block& b);     // consolidate read
+    void wait();
+    bool wait_ms(size_t ms);
+    // template operator functions
+};
+
+/**
+ * Fast queue.
+ * atomic used counter.  fast available calculation
+ * Next is an structure - ptr + size for fast write, Updated when size go 0.
+ * Reader will disabel writter side.
+ * set next 0
+ * set wr 0
+ * set rd 0
+ *
+ * reader will test used, before do anything
+ *
+ * Writer do this secuence.
+ * inc next, if was 0 then reset to 0
+ * if next == 0 ignore
+ * if wr == null ignore
+ * if rd == null nothing else if wr == null then start.
+ * if (used == 0) move rd to begin.
+ *
+ * if wr > rd then space until end
+ * if wr == size and used != size -1 then go 0.
+ *
+ *
+ *
+ */
+class FastQueue : public IQueue
+{
+
+};
 #endif /* QUEUE_H_ */
