@@ -14,6 +14,15 @@
 #include <cassert>
 #include <atomic>
 #include <ostream>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <memory>
+#include <cstring>
+#include <cstddef>
+
+#include "Buffer.h"
+
+using namespace std;
 /**
  * Multiples consumers one producer queue
  * The queue is split in N blocks containing M elements of type T
@@ -298,6 +307,215 @@ public:
         }
 
         return os;
+    }
+};
+
+/**
+ * Page allocator
+ * Allocated the nearest page that can hold the required memory
+ */
+class page
+{
+protected:
+    void* page_;
+    size_t size_;
+public:
+    page(size_t size)
+    {
+        int psize = getpagesize();
+        size_ = (size + psize - 1) / psize;
+        page_ = mmap(0, size_, PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (page_ == MAP_FAILED)
+        {
+            throw bad_alloc();
+        }
+    }
+    ~page()
+    {
+        if (munmap(page_, size_) == -1)
+        {
+            //error log
+        }
+    }
+    page(const page&) = delete;
+    page(const page&&) = delete;
+    page& operator=(const page&) = delete;
+    page& operator=(const page&&) = delete;
+};
+
+/**
+ * One consumer, one producer small footprint queue
+ * two operation modes.
+ * 1 - no reader no data is produce. writter does not known
+ * 2 - Buffer overflow only happens if there is reader on the first block.
+ * Mutex is use to move on to a new block.
+ *
+ * All write operation are protected using mutex.
+ * Reader only lock mutex when waiting for data and when do modifications.+
+ *
+ * empty is set by reader to indicate waiting condition
+ * reader will do nothing until data become available via signal.
+ * waiting is modified only inside mutex
+ *
+ * writer is able to modified reader data if waiting is true.
+ */
+
+class sfp_queue
+{
+    /**
+     * each page will start with this
+     */
+    struct s_page_header
+    {
+        size_t used_;   ///< memory used or fill up
+        uint8_t data[1] __attribute__ ((aligned));    ///<data start here
+    };
+    class block: public page
+    {
+        friend class sfp_queue;
+        block* next_;
+    public:
+        block(size_t size) :
+                page(size), next_(nullptr)
+        {
+            struct s_page_header* p = reinterpret_cast<s_page_header*>(page_);
+            p->used_ = 0;
+        }
+        size_t getFree() const
+        {
+            return size_ - reinterpret_cast<s_page_header*>(page_)->used_;
+        }
+        template<class T>
+        void write(const T& d, size_t pos)
+        {
+            write(&d, sizeof(T), pos);
+        }
+        void write(const void* d, size_t size, size_t pos)
+        {
+            struct s_page_header* p = reinterpret_cast<s_page_header*>(page_);
+            // overflow situation is covered
+            if ((pos > size_ - offsetof(s_page_header, data)) || (size > size_ - offsetof(s_page_header, data) - pos)) //TODO use assert for optimization, then force to go debug mode to check error
+                throw bad_alloc();
+            memcpy(p->data + pos, d, size);
+        }
+        void commit(size_t pos)
+        {
+            assert(pos <= size_ - offsetof(s_page_header, data));
+            reinterpret_cast<s_page_header*>(page_)->used_ = pos;
+        }
+        size_t getUsed() const
+        {
+            return reinterpret_cast<s_page_header*>(page_)->used_;
+        }
+        /**
+         * Get pointer to data from position
+         */
+        void* getPtr(size_t pos)
+        {
+            return reinterpret_cast<s_page_header*>(page_)->data + pos;
+        }
+    };
+
+    size_t max_size_ = 0;
+    size_t allocated_ = 0;
+    block* blocks_ = nullptr;
+    block* free_blocks_ = nullptr;
+    // current write position will be hold from outside,
+    mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
+    condition_variable cv_;     ///< condition variable for data available
+    block* reader_ = nullptr;    ///< rd_pos = 0 no reader rd_pos !=0 waiting for first block of data, set by writer at first block creation
+    block* writer_ = nullptr;
+    size_t wr_pos_ = 0;
+    size_t rd_pos_ = 0;  ///< if 0 means no reader, offset(data) means waiting for reader
+    volatile unsigned rd_status_ = 0; // 0 - no reader, // 1 - reader on // 2 - reader waiting
+public:
+    /**
+     * Ctor
+     * @max - maximum size of allocated memory for the queue
+     */
+    sfp_queue(size_t max) :
+            max_size_(max)
+    {
+
+    }
+    /**
+     * The reader is disconnected, no more data will be produce until a new reader start
+     */
+    void ReaderStop()
+    {
+        lock_guard<std::mutex> lock(mutex_);
+        reader_ = nullptr;
+        rd_status_ = 0;
+        writer_ = nullptr;
+        reader_ = nullptr;
+        FreeBlocks();
+    }
+    /**
+     * Reader start
+     * A new reader has started reading data
+     */
+    void ReaderStart()
+    {
+        lock_guard<std::mutex> lock(mutex_);
+        rd_status_ = 2;     //only writer put this to 1
+    }
+    void getBlock(void* &p, size_t& size)
+    {
+        if (rd_status_ == 0)            // exception
+            return;
+        if (rd_status_ == 1)            // reading status
+        {
+            if ((reader_->getUsed() == rd_pos_) && (reader_->next_ != nullptr))
+            {
+                ReaderGoNext();
+            }
+            if (reader_->getUsed() != rd_pos_)  //data available
+            {
+                p = reader_->getPtr(rd_pos_);
+                size = reader_->getUsed() - rd_pos_;
+                return;
+            }
+            rd_status_ = 2;     // go to waiting status
+        }
+//        unique_lock<std::mutex> lock(mutex_);
+//        cv_.wait(lock);
+        size = 0;
+    }
+    void waitData()
+    {
+        unique_lock<std::mutex> lock(mutex_);
+        while (rd_status_ == 2)
+            cv_.wait(lock);
+    }
+    /**
+     * Delete all memory blocks allocated
+     */
+    void FreeBlocks()
+    {
+        while (blocks_ != nullptr)
+        {
+            block* block = blocks_;
+            blocks_ = block->next_;
+            delete block;
+        }
+        while (free_blocks_ != nullptr)
+        {
+            block* block = free_blocks_;
+            free_blocks_ = block->next_;
+            delete block;
+        }
+    }
+    /**
+     * Move reader to the next block
+     */
+    void ReaderGoNext()
+    {
+        unique_lock<std::mutex> lock(mutex_);
+        block* b = reader_;
+        reader_ = reader_->next_;
+        rd_pos_ = 0;
+        b->next_ = free_blocks_;
+        free_blocks_ = b;
     }
 };
 
