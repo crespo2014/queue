@@ -459,6 +459,9 @@ public:
         lock_guard<std::mutex> lock(mutex_);
         rd_status_ = 2;     //only writer put this to 1
     }
+    /**
+     * Reader get a block of memory to be send
+     */
     void getBlock(void* &p, size_t& size)
     {
         if (rd_status_ == 0)            // exception
