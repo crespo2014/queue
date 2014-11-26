@@ -550,7 +550,7 @@ public:
  * Fast queue.
  * atomic used counter.  fast available calculation
  * Next is an structure - ptr + size for fast write, Updated when size go 0.
- * Reader will disabel writter side.
+ * Reader will disable writter side.
  * set next 0
  * set wr 0
  * set rd 0
@@ -567,7 +567,19 @@ public:
  * if wr > rd then space until end
  * if wr == size and used != size -1 then go 0.
  *
+ *  Reader variables
+ *  Used_   - if zero do not continue
+ *  rd_ptr  - nullptr no reader set yet
  *
+ *  Writer variables
+ *  use next and size, update it ,
+ *  if size == 0 then, reset
+ *  if next = nullptr then reset
+ *
+ *  Alloc
+ *  if next == 0 && rd == 0 ignore.
+ *  next == 0 reader != 0 , start again
+ *  if (rd > wr) adjust next
  *
  */
 class FastQueue : public IQueue
