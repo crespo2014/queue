@@ -1,0 +1,76 @@
+digraph {
+	rankdir=TB;
+	node [fontsize=8]
+	
+subgraph cluster_reader
+{
+	rank=max
+	r_check [label="used==0",shape="diamond"]
+	r_wait  [label="wait for data"]
+	r_adj [label="if rd == end adjust"]
+	r_size [label="get wr, calculate size"]
+	r_end [label="end"]
+	
+	r_check -> r_wait [label="true"]
+	r_check -> r_adj [label="false"]
+	r_wait -> r_adj;
+    r_adj -> r_size;
+    r_size -> r_end;
+} 
+
+subgraph cluster_writer 
+{
+	rank=max;
+	w_next[label="request < next_size"]
+	w_st [label="request < available"]
+	w_end [label="END"]
+	w_adj [label="calculate next_size"]
+	w_0 [label="used == 0"]
+	w_rst [label="reset rd,wr,next to start"];
+	w_st -> w_end [label="no"]
+	w_st -> w_0 [label="yes"]
+	w_0 -> w_rst [label="yes"]
+	w_0 -> w_adj [label="no"]
+	w_adj -> w_end;
+	w_rst -> w_adj;	
+	w_next -> w_end [label="yes"]
+	w_next -> w_st [label="no"]
+	wr_add1 [label="write max min(request < size)"]
+	wr_add2 [label="next++"]
+	wr_add3 [label="next == max"]
+	wr_add4 [label="reset next, recalcule size"]
+	wr_add5 [label="ERROR if remaining data"]
+	wr_add6 [label="remaining == 0"]
+	wr_add_end [label="end write"]
+	
+	w_end -> wr_add1;
+	wr_add1 -> wr_add2;
+	wr_add2 -> wr_add3;
+	wr_add3 -> wr_add4 [label="yes"]
+	wr_add3 -> wr_add5 [label="no"]
+	wr_add4 -> wr_add6;
+	wr_add6 -> wr_add1 [label="no"]
+	wr_add6 -> wr_add_end [label="yes"]
+}
+
+subgraph cluster_reader_on {
+ label="Reader OFF"
+ s1 [shape="box",label="rd_ptr = nullptr"]
+ s2 [shape="box",label="next_ptr = nullptr"]
+ 
+}
+
+subgraph cluster_variables
+{
+	node [shape="none"]
+	rd [label="rd_ptr read pointer"]
+	wr [label="wr-ptr last position to be read"]
+	next [label="next-ptr next position to be write"]
+	next_size [label="next-size contiguos space in next"]
+	used [label="used space in used"]
+	rd_flag ["read flag - true if a reader is present"]
+}
+
+
+
+}

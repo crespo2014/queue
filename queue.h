@@ -581,6 +581,28 @@ public:
  *  next == 0 reader != 0 , start again
  *  if (rd > wr) adjust next
  *
+ *  variable usability.
+ *  test used, test wr
+ *  next_size update
+ *
+ *  writer
+ *  next ++ //check zero for reset
+ *  next = start
+ *  write = next    // chek zero on wr for reset
+ *  used++
+ *
+ *  reader
+ *  rd = 0 OFF
+ *  rd = start STARTING if next = 0
+ *
+ *  use exchange to test previous values
+ *  OFF rd =0 , f =0 , next =0
+ *  ON  used=0, f=1
+ *
+ *  writer
+ *  push if f = 0 or next = 0, quit no way to push data until next alloc
+ *  alloc if f==0 ,if (rd != 0) reset, quit
+ *
  */
 class FastQueue : public IQueue
 {
