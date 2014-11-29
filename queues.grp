@@ -11,7 +11,7 @@ subgraph cluster_reader
 	r_0 [label="writing = 0\nreading = 1",color=red]
 	r_1 [label=READ,shape=circle]
 	r_s1 [label="invariant (reading)"]
-	r_check [label="writing==0\n OR \nused==0",shape="diamond"]
+	r_check [label="writing==0\n OR \nused==0",shape="diamond",color=green]
 	r_wait  [label="wait for data"]
 	r_get_wr [label="GET wr",colro=blue]
 	r_calc [label="size\nwr-rd OR max-rd"]
@@ -36,6 +36,7 @@ subgraph cluster_reader
     r_10 -> r_end
     r_end -> r_11;
     r_11 -> r_12
+    r_end -> READ[constrains=true,style=dotted]
 } 
 
 subgraph cluster_writer  
@@ -44,71 +45,56 @@ subgraph cluster_writer
 	node [shape=box]
 	rank=max;
 	w000 [label=START,shape=circle]
-	w001 [label="writing==0",shape=diamond]
+	w001 [label="writing==0",shape=diamond,color=blue]
 	w0011 [label="Reset\nrd=wr=next=start\nused=0"]
 	w0012 [label="writing = 1",color=red]
 	w0013 [label="reading = 1",shape=diamond]
-	w_00 [label="GET rd\nGET wr"]
-	w_01 [label="wr == 0",shape=diamond]
-	w_02 [label="next == 0",shap=diamond]
-	w_03 [label="reset wr,next"]
-	w_next[label="request < next_size"]
-	w_st [label="request < available"]
-	w_end [label="END"]
+	w0014 [label="used == 0"]
+	w0015 [label="rd=wr=next=start\nnext-size=max-1"];
+	w_next[label="request < next_size",shape=diamond]
+	w_st [label="request < available",shape=diamond]
+	w0020 [label="Write",shape=circle]
 	w_adj [label="calculate next_size"]
-	w_0 [label="used == 0"]
-	w_rst [label="reset rd,wr,next to start"];
-	w_st -> w_end [label="no"]
-	w_st -> w_0 [label="yes"]
-	w_0 -> w_rst [label="yes"]
-	w_0 -> w_adj [label="no"]
-	w_adj -> w_end;
-	w_rst -> w_adj;	
-	w_next -> w_end [label="yes"]
+	w_st -> OVERFLOW [label="no"]
+	w_st -> w_adj [label="yes"]
+	w0022 [label="writing == 1",color=blue,shape=diamond]
+	w0022 -> Exit1 [label="no"]
+	w0020 -> w0022;
+	w0022 -> wr_add1 [label="yes"]
+	w_adj -> w0020;
+	w_next -> w0020 [label="yes"]
 	w_next -> w_st [label="no"]
 	wr_add1 [label="write max min(request < size)"]
-	wr_add2 [label="next++"]
-	wr_add3 [label="next == max"]
-	wr_add4 [label="reset next, recalcule size"]
+	wr_add2 [label="next++\nlen--\next_size--"]
+	wr_add3 [label="next == max",shape=diamond]
+	wr_add4 [label="next=start\nnext_size = X"]
 	wr_add5 [label="ERROR if remaining data"]
-	wr_add6 [label="remaining == 0"]
-	wr_add_end [label="end write"]
-	
+	wr_add6 [label="invariant (next_size >= len) "]
+	w0030 [label="len > 0",shape=diamond]
+	w0040 [label="Commit",shape=circle]
+	w0041 [label="wr = next\nused++",color=blue]	
+	w0044 [label="End",shape=circle]
 	w0012 -> w0013;
-	w0013 -> w_00 [label="yes"]
+	w0013 -> w0014 [label="yes"]
+	w0014 -> w0015 [label=yes]
+	w0015 -> w_next
+	w0014 -> w_next [label=no]
 	w000 -> w001
 	w001 -> w0011 [label=yes]
 	w0011 -> w0012;
+	w0030 -> wr_add1 [label=yes]
+	wr_add6 -> w0030
 	
 	w001->w0013 [label=no]
-	w_00 -> w_01
-	w_01 -> w_02 [label="yes"]
-	w_end -> wr_add1;
 	wr_add1 -> wr_add2;
 	wr_add2 -> wr_add3;
 	wr_add3 -> wr_add4 [label="yes"]
 	wr_add3 -> wr_add5 [label="no"]
 	wr_add4 -> wr_add6;
-	wr_add6 -> wr_add1 [label="no"]
-	wr_add6 -> wr_add_end [label="yes"]
-	w0013 -> wr_add_end [label="no"]
-}
-
-	subgraph cluster_var
-	{
-		v1 [label="bool reading = 0"]
-		v2 [label="bool writing = 0"]
-	}
-
-subgraph cluster_variables
-{
-	node [shape="none"]
-	rd [label="rd_ptr read pointer"]
-	wr [label="wr-ptr last position to be read"]
-	next [label="next-ptr next position to be write"]
-	next_size [label="next-size contiguos space in next"]
-	used [label="used space in used"]
-	rd_flag ["read flag - true if a reader is present"]
+	w0013 -> END [label="no"]
+	w0030 -> w0040 [label="no"]
+	w0040 -> w0041
+	w0041 -> w0044
 }
 
 
