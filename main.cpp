@@ -14,7 +14,6 @@
 #include "CppUTest/TestHarness.h"
 #include "CppUTestExt/MockSupport.h"
 #include "CppUTest/MemoryLeakDetectorNewMacros.h"
-
 #include "CppUTest/CommandLineTestRunner.h"
 
 TEST_GROUP(queue)
@@ -136,7 +135,7 @@ int main(int ac, char** av)
 #else
 int main()
 {
-    test();
+    //test();
     return 0;
 }
 

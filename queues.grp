@@ -1,26 +1,57 @@
 digraph {
 	rankdir=TB;
 	node [fontsize=8]
+
 	
 subgraph cluster_reader
 {
-	rank=max
-	r_check [label="used==0",shape="diamond"]
+	node[shape="box"]
+	label="Reader loop"
+	r_s0 [label="Start",shape=circle]
+	r_0 [label="writing = 0\nreading = 1",color=red]
+	r_1 [label=READ,shape=circle]
+	r_s1 [label="invariant (reading)"]
+	r_check [label="writing==0\n OR \nused==0",shape="diamond"]
 	r_wait  [label="wait for data"]
-	r_adj [label="if rd == end adjust"]
-	r_size [label="get wr, calculate size"]
-	r_end [label="end"]
+	r_get_wr [label="GET wr",colro=blue]
+	r_calc [label="size\nwr-rd OR max-rd"]
+	r_send [label="Send",shape=circle]
+	r_adj [label="rd += n\nif rd == end\nrd=buff",color=blue]
+	r_10 [label="used -= n",color=red]
+	r_end [label="STOP",shape=circle]
+	r_11 [label="reading = 0\nwritting = 0",color=red]
+	r_12 [label="END",shape=circle]
 	
+	r_s0 -> r_0
+	r_0 -> r_1;
+	r_1 -> r_s1;
+	r_s1 -> r_check
 	r_check -> r_wait [label="true"]
-	r_check -> r_adj [label="false"]
-	r_wait -> r_adj;
-    r_adj -> r_size;
-    r_size -> r_end;
+	r_check -> r_get_wr [label="false"]
+	r_wait -> r_get_wr;
+	r_get_wr -> r_calc;
+	r_calc -> r_send;
+	r_send -> r_adj
+    r_adj -> r_10;
+    r_10 -> r_end
+    r_end -> r_11;
+    r_11 -> r_12
 } 
 
-subgraph cluster_writer 
+subgraph cluster_writer  
 {
+	label="Writer loop"
+	node [shape=box]
 	rank=max;
+	w000 [label=START,shape=circle]
+	w001 [label="writing==0",shape=diamond]
+	w0011 [label="Reset\nrd=wr=next=start\nused=0"]
+	w0012 [label="writing = 1",color=red]
+	w0013 [label="reading = 1",shape=diamond]
+	w_00 [label="GET rd\nGET wr"]
+	w_01 [label="wr == 0",shape=diamond]
+	w_02 [label="next == 0",shap=diamond]
+	w_03 [label="reset wr,next"]
 	w_next[label="request < next_size"]
 	w_st [label="request < available"]
 	w_end [label="END"]
@@ -43,6 +74,15 @@ subgraph cluster_writer
 	wr_add6 [label="remaining == 0"]
 	wr_add_end [label="end write"]
 	
+	w0012 -> w0013;
+	w0013 -> w_00 [label="yes"]
+	w000 -> w001
+	w001 -> w0011 [label=yes]
+	w0011 -> w0012;
+	
+	w001->w0013 [label=no]
+	w_00 -> w_01
+	w_01 -> w_02 [label="yes"]
 	w_end -> wr_add1;
 	wr_add1 -> wr_add2;
 	wr_add2 -> wr_add3;
@@ -51,14 +91,14 @@ subgraph cluster_writer
 	wr_add4 -> wr_add6;
 	wr_add6 -> wr_add1 [label="no"]
 	wr_add6 -> wr_add_end [label="yes"]
+	w0013 -> wr_add_end [label="no"]
 }
 
-subgraph cluster_reader_on {
- label="Reader OFF"
- s1 [shape="box",label="rd_ptr = nullptr"]
- s2 [shape="box",label="next_ptr = nullptr"]
- 
-}
+	subgraph cluster_var
+	{
+		v1 [label="bool reading = 0"]
+		v2 [label="bool writing = 0"]
+	}
 
 subgraph cluster_variables
 {
