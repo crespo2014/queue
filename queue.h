@@ -370,6 +370,19 @@ class sfp_queue
         size_t used_;   ///< memory used or fill up
         uint8_t data[1] __attribute__ ((aligned));    ///<data start here
     };
+    /**
+     * class to define a header on pages
+     */
+    template<class P>
+    class page_header : public page{
+
+    };
+
+    /**
+     * class to make a list add next to base class
+     */
+    //forwar list
+
     class block: public page
     {
         friend class sfp_queue;
@@ -603,6 +616,9 @@ public:
  *  push if f = 0 or next = 0, quit no way to push data until next alloc
  *  alloc if f==0 ,if (rd != 0) reset, quit
  *
+ * volatile is fine if we are not required for atomic updates.
+ * that is means it can be modified from outside.
+ * best use atomic with memory barrier.
  */
 class FastQueue : public IQueue
 {

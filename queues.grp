@@ -48,16 +48,16 @@ subgraph cluster_writer
 	w001 [label="writing==0",shape=diamond,color=blue]
 	w0011 [label="Reset\nrd=wr=next=start\nused=0"]
 	w0012 [label="writing = 1",color=red]
-	w0013 [label="reading = 1",shape=diamond]
+	w0013 [label="reading = 1",shape=diamond,color=blue]
 	w0014 [label="used == 0"]
 	w0015 [label="rd=wr=next=start\nnext-size=max-1"];
 	w_next[label="request < next_size",shape=diamond]
 	w_st [label="request < available",shape=diamond]
 	w0020 [label="Write",shape=circle]
-	w_adj [label="calculate next_size"]
+	w_adj [label="calculate next_size\nGET rd_ptr",color=blue]
 	w_st -> OVERFLOW [label="no"]
 	w_st -> w_adj [label="yes"]
-	w0022 [label="writing == 1",color=blue,shape=diamond]
+	w0022 [label="writing == 1\n&&\nreading == 1",color=blue,shape=diamond]
 	w0022 -> Exit1 [label="no"]
 	w0020 -> w0022;
 	w0022 -> wr_add1 [label="yes"]
@@ -65,14 +65,15 @@ subgraph cluster_writer
 	w_next -> w0020 [label="yes"]
 	w_next -> w_st [label="no"]
 	wr_add1 [label="write max min(request < size)"]
-	wr_add2 [label="next++\nlen--\next_size--"]
+	wr_add2 [label="next++\nlen--\nnext_size--"]
 	wr_add3 [label="next == max",shape=diamond]
 	wr_add4 [label="next=start\nnext_size = X"]
 	wr_add5 [label="ERROR if remaining data"]
 	wr_add6 [label="invariant (next_size >= len) "]
 	w0030 [label="len > 0",shape=diamond]
 	w0040 [label="Commit",shape=circle]
-	w0041 [label="wr = next\nused++",color=blue]	
+	w0041 [label="wr = next\nused++",color=blue]
+	w00411 [label="if used was 0\nSIGNAL"]	
 	w0044 [label="End",shape=circle]
 	w0012 -> w0013;
 	w0013 -> w0014 [label="yes"]
@@ -94,7 +95,8 @@ subgraph cluster_writer
 	w0013 -> END [label="no"]
 	w0030 -> w0040 [label="no"]
 	w0040 -> w0041
-	w0041 -> w0044
+	w0041 -> w00411
+	w00411 -> w0044
 }
 
 
