@@ -132,6 +132,7 @@
 		<configuration configurationName="Default">
 			<resource resourceType="PROJECT" workspacePath="/queue"/>
 		</configuration>
+		<configuration configurationName="make"/>
 		<configuration configurationName="graph">
 			<resource resourceType="PROJECT" workspacePath="/queue"/>
 		</configuration>

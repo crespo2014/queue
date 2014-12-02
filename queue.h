@@ -22,6 +22,9 @@
 
 #include "Buffer.h"
 
+#define invariant(x) \
+    assert(x)
+
 using namespace std;
 /**
  * Multiples consumers one producer queue
@@ -374,7 +377,8 @@ class sfp_queue
      * class to define a header on pages
      */
     template<class P>
-    class page_header : public page{
+    class page_header: public page
+    {
 
     };
 
@@ -382,7 +386,6 @@ class sfp_queue
      * class to make a list add next to base class
      */
     //forwar list
-
     class block: public page
     {
         friend class sfp_queue;
@@ -540,22 +543,21 @@ public:
  */
 class IQueue
 {
+public:
     class Block
     {
         const uint8_t* const ptr;
         const size_t len;
     };
-public:
-    void StartReader();
-    void EndReader();
-    bool Allocate(size_t len);
-    void write(void* d,size_t len);
+    virtual void ReaderStart() = 0;
+    virtual void ReaderEnd() = 0;
+    virtual bool Allocate(size_t len) = 0;
+    void write(void* d, size_t len);
     void Commit();
     void RollBack();
     Block peek();
     void get(Block& b);     // consolidate read
-    void wait();
-    bool wait_ms(size_t ms);
+    void wait();bool wait_ms(size_t ms);
     // template operator functions
 };
 
@@ -620,8 +622,67 @@ public:
  * that is means it can be modified from outside.
  * best use atomic with memory barrier.
  */
-class FastQueue : public IQueue
+class FastQueue: public IQueue
 {
+    class block
+    {
+        const size_t size_;      // size of allocated buffer
+        uint8_t* const buffer_;
+    public:
+        block(uint8_t* buffer,size_t size): size_(size), buffer_(buffer)
+        {}
+    };
+    const size_t size_;      // size of allocated buffer
+    uint8_t* const buffer_;
+
+#if 0
+    atomic<uint8_t> writing_;
+    atomic<uint8_t> reading_;
+    atomic<uint8_t*> rd_ptr_;
+    atomic<uint8_t*> wr_ptr_;
+#else
+    volatile uint8_t writing_;
+    volatile uint8_t reading_;
+    volatile uint8_t* rd_ptr_;
+    volatile uint8_t* wr_ptr_;
+#endif
+    atomic_size_t used_;
+    uint8_t* next_ptr_;
+    size_t next_size_;
+    /**
+     * Reset all pointer to beggining
+     */
+    void reset()
+    {
+        wr_ptr_ = buffer_;
+        rd_ptr_ = buffer_;
+        next_ptr_ = buffer_;
+        next_size_ = size_ - 1;
+        used_ = 0;
+        //asm volatile ("" : : : "memory");       // force all write operations
+        writing_ = 1;
+    }
+public:
+    FastQueue(size_t size) :
+            size_(size), buffer_(new uint8_t[size])
+    {
+        reset();
+        reading_ = 1;
+    }
+    void readerStart()
+    {
+        writing_ = 0;
+        reading_ = 1;
+    }
+    void readerStop()
+    {
+        reading_ = 0;
+        writing_ = 0;
+    }
+    block Peek()
+    {
+        invariant(reading_ == 1);
+    }
 
 };
 #endif /* QUEUE_H_ */

@@ -15,13 +15,15 @@ LIBS := -lpthread -lCppUTest
 list_grp = $(wildcard *.grp)
 list_cpp = $(wildcard *.cpp)
 
+-include $(wildcard *.d)
+
 %.png : %.grp
 	dot -T png -o $@ $^
 	
 %.o : %.cpp
-	g++ -c ${includes} ${cpp_flags} -o $@ $^
+	g++ -c ${includes} ${cpp_flags} -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
 	
 Queue : $(patsubst %.cpp,%.o,${list_cpp})
-	g++ ${includes} ${cpp_flags} ${ld_flags} ${ld_libs} ${LIBS} -o $@ $^
+	g++ ${ld_flags} -o $@ $^ ${ld_libs} ${LIBS}
 	
-all : $(patsubst %.grp,%.png,${list_grp})
+all : $(patsubst %.grp,%.png,${list_grp}) Queue
