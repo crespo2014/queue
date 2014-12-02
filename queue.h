@@ -22,8 +22,12 @@
 
 #include "Buffer.h"
 
+#ifdef _NDEBUG
+#define invariant(x)
+#else
 #define invariant(x) \
     assert(x)
+#endif
 
 using namespace std;
 /**
@@ -629,8 +633,10 @@ class FastQueue: public IQueue
         const size_t size_;      // size of allocated buffer
         uint8_t* const buffer_;
     public:
-        block(uint8_t* buffer,size_t size): size_(size), buffer_(buffer)
-        {}
+        block(uint8_t* buffer, size_t size) :
+                size_(size), buffer_(buffer)
+        {
+        }
     };
     const size_t size_;      // size of allocated buffer
     uint8_t* const buffer_;
@@ -679,10 +685,33 @@ public:
         reading_ = 0;
         writing_ = 0;
     }
+    /**
+     * Reader peek data
+     */
     block Peek()
     {
         invariant(reading_ == 1);
+        uint8_t* p = nullptr;
+        size_t s = 0;
+        if (writing_ != 0)
+        {
+            p = const_cast<uint8_t*>(wr_ptr_);
+            if (p > rd_ptr_)
+                s = p - rd_ptr_;
+            else
+                s = buffer_ + size_ - rd_ptr_ - (p == buffer_ ? 0 : 1);
+            p = const_cast<uint8_t*>(rd_ptr_);
+        }
+        return
+        {   p,s};
     }
-
-};
+    /*
+     * Reader remove data from queue
+     */
+    void Pop(block& b)
+    {
+        invariant(reading_ == 1);
+    }
+}
+;
 #endif /* QUEUE_H_ */
