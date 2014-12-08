@@ -23,7 +23,7 @@ list_cpp = $(wildcard *.cpp)
 %.o : %.cpp
 	g++ -c ${includes} ${cpp_flags} -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
 	
-Queue : $(patsubst %.cpp,%.o,${list_cpp})
+Queue.out : $(patsubst %.cpp,%.o,${list_cpp})
 	g++ ${ld_flags} -o $@ $^ ${ld_libs} ${LIBS}
 	
-all : $(patsubst %.grp,%.png,${list_grp}) Queue
+all : $(patsubst %.grp,%.png,${list_grp}) Queue.out

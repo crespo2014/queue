@@ -1,1 +1,4 @@
 /Default
+*.o
+*.d
+*.out
