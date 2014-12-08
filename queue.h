@@ -636,10 +636,15 @@ class FastQueue: public IQueue
         block(uint8_t* buffer, size_t size) :
                 size_(size), buffer_(buffer)
         {
+
+        }
+        size_t getSize() const
+        {
+            return size_;
         }
     };
     const size_t size_;      // size of allocated buffer
-    uint8_t* const buffer_;
+    uint8_t* const buffer_;  // pointer to allocated memory
 
 #if 0
     atomic<uint8_t> writing_;
@@ -651,10 +656,14 @@ class FastQueue: public IQueue
     volatile uint8_t reading_;
     volatile uint8_t* rd_ptr_;
     volatile uint8_t* wr_ptr_;
+    volatile bool waiting_ = false;
 #endif
     atomic_size_t used_;
     uint8_t* next_ptr_;
     size_t next_size_;
+    mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
+    condition_variable cv_;     ///< condition variable for data available
+
     /**
      * Reset all pointer to beggining
      */
@@ -693,7 +702,7 @@ public:
         invariant(reading_ == 1);
         uint8_t* p = nullptr;
         size_t s = 0;
-        if (writing_ != 0)
+        if ((writing_ == 1) && (used_ != 0))
         {
             p = const_cast<uint8_t*>(wr_ptr_);
             if (p > rd_ptr_)
@@ -705,12 +714,96 @@ public:
         return
         {   p,s};
     }
+    /**
+     * wait for data
+     */
+    void wait()
+    {
+        if ((writing_ == 0) || (used_ == 0))
+        {
+            unique_lock<std::mutex> lock(mutex_);
+            waiting_ = true;
+            cv_.wait(lock);
+        }
+    }
     /*
      * Reader remove data from queue
      */
     void Pop(block& b)
     {
         invariant(reading_ == 1);
+        rd_ptr_ += b.getSize();
+        if (rd_ptr_ == buffer_ + size_)
+            rd_ptr_ = buffer_;
+        used_ -= b.getSize();
+    }
+    /**
+     * Allocate size for a write operation
+     * @return true - the size was successfully allocated
+     *  false - there is not enought room
+     */
+    bool allocate(size_t size)
+    {
+        if ((writing_ == 0) || ((used_ == 0) && (next_ptr_ != buffer_)))
+            reset();
+        if (reading_ == 1)
+        {
+            if (size > next_size_)
+            {
+                if (size < size_ - used_)
+                    return false;
+                uint8_t* p = const_cast<uint8_t*>(rd_ptr_);
+                if (p >= next_ptr_)
+                    next_size_ = p - next_ptr_;
+                else
+                {
+                    next_size_ = buffer_ + size - next_ptr_;
+                    if (p == buffer_)
+                        next_size_--;
+                }
+            }
+        }
+        return true;
+    }
+    /**
+     * Push data to the queue
+     * Data is not ready until commit or rollback is called
+     */
+    void Push(const void* dt, size_t size)
+    {
+        if (writing_ && reading_)
+        {
+            size_t len = (size > next_size_) ? next_size_ : size;
+            while (len)
+            {
+                memcpy(next_ptr_, dt, len);
+                size -= len;
+                next_size_ -= len;
+                dt = reinterpret_cast<const uint8_t*>(dt) + len;
+                if (next_ptr_ == buffer_ + size_)
+                {
+                    next_ptr_ = buffer_;
+                    next_size_ = (rd_ptr_ - buffer_);
+                }
+                else
+                {
+                    if (len != 0)
+                        throw bad_alloc();
+                }
+            }
+        }
+    }
+    void Commit()
+    {
+        size_t count = ( wr_ptr_ <= next_ptr_) ? next_ptr_ - wr_ptr_ :  size_ - (wr_ptr_ - next_ptr_);
+        wr_ptr_ = next_ptr_;
+        used_ += count;
+        if (waiting_)
+            cv_.notify_one();
+    }
+    virtual ~FastQueue()
+    {
+        delete[] buffer_;
     }
 }
 ;
