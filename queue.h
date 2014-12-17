@@ -835,10 +835,11 @@ class Queue4: public page
         uint32_t rd_last;   // no circular queue. if rd > wr then last is the last data
         uint8_t data[1];
     };
-    volatile uint8_t writing_;      // 0 means reset is necessary, 1 - writter ready
-    volatile uint8_t reading_;      // 0 no reader online
+    volatile bool writing_ = false;      // 0 means reset is necessary, 1 - writter ready
+    volatile bool reading_ = false;      // 0 no reader online
+    volatile bool waiting_ = false;
     tpage_hdr * const buffer_;
-    atomic_size_t used_;
+    atomic_size_t used_{0};
     uint8_t* next_ptr_;
     size_t next_size_;
     mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
@@ -859,11 +860,11 @@ class Queue4: public page
         next_ptr_ = buffer_->data;
         next_size_ = max_size();
         used_ = 0;
-        writing_ = 1;
+        writing_ = true;
     }
 public:
     Queue4(size_t size) :
-            page(size), writing_(false), reading_(false), buffer_(reinterpret_cast<tpage_hdr *>(page::get())), used_(0), next_ptr_(buffer_->data), next_size_(max_size())
+            page(size), buffer_(reinterpret_cast<tpage_hdr *>(page::get())), next_ptr_(buffer_->data), next_size_(max_size())
     {
         buffer_->wr_pos = buffer_->rd_pos = offsetof(tpage_hdr, data);
         buffer_->rd_last = max_size();
@@ -874,16 +875,16 @@ public:
     void startReader()
     {
         invariant(reading_ == 0);
-        writing_ = 0;
-        reading_ = 1;
+        writing_ = false;
+        reading_ = true;
     }
     /**
      * Reader is disconnect
      */
     void endReader()
     {
-        writing_ = 0;
-        reading_ = 0;
+        writing_ = false;
+        reading_ = false;
     }
     /**
      * Reader peek data
@@ -914,6 +915,18 @@ public:
         if (buffer_->rd_pos == buffer_->rd_last)
             buffer_->rd_pos = 0;
         used_ -= count;
+    }
+    /**
+     * wait for data
+     */
+    void wait()
+    {
+        if ((writing_ == 0) || (used_ == 0))
+        {
+            unique_lock<std::mutex> lock(mutex_);
+            waiting_ = true;
+            cv_.wait(lock);
+        }
     }
 };
 
