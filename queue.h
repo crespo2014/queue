@@ -51,7 +51,6 @@ public:
     }
 };
 
-
 /**
  * Multiples consumers one producer queue
  * The queue is split in N blocks containing M elements of type T
@@ -867,6 +866,7 @@ public:
             page(size), writing_(false), reading_(false), buffer_(reinterpret_cast<tpage_hdr *>(page::get())), used_(0), next_ptr_(buffer_->data), next_size_(max_size())
     {
         buffer_->wr_pos = buffer_->rd_pos = offsetof(tpage_hdr, data);
+        buffer_->rd_last = max_size();
     }
     /**
      * Reader start reading
@@ -903,6 +903,17 @@ public:
         }
         return
         {   buffer_->data + buffer_->rd_pos,s};
+    }
+    /*
+     * Reader remove data from queue
+     */
+    void Pop(size_t count)
+    {
+        invariant(reading_ == 1);
+        buffer_->rd_pos += count;
+        if (buffer_->rd_pos == buffer_->rd_last)
+            buffer_->rd_pos = 0;
+        used_ -= count;
     }
 };
 
