@@ -321,6 +321,7 @@ public:
  * Page allocator
  * Allocated the nearest page that can hold the required memory
  */
+template<class T=uint8_t>
 class page
 {
 protected:
@@ -344,6 +345,14 @@ public:
             //error log
         }
     }
+    T* get() const
+    {
+        return reinterpret_cast<T*>(page_);
+    }
+    size_t size() const
+    {
+        return size_;
+    }
     page(const page&) = delete;
     page(const page&&) = delete;
     page& operator=(const page&) = delete;
@@ -366,7 +375,7 @@ public:
  *
  * writer is able to modified reader data if waiting is true.
  */
-
+#if 0
 class sfp_queue
 {
     /**
@@ -375,28 +384,19 @@ class sfp_queue
     struct s_page_header
     {
         size_t used_;   ///< memory used or fill up
-        uint8_t data[1] __attribute__ ((aligned));    ///<data start here
+        uint8_t data[1] __attribute__ ((aligned));///<data start here
     };
-    /**
-     * class to define a header on pages
-     */
-    template<class P>
-    class page_header: public page
-    {
-
-    };
-
     /**
      * class to make a list add next to base class
      */
     //forwar list
     class block: public page
     {
-        friend class sfp_queue;
+        // friend class sfp_queue;
         block* next_;
     public:
         block(size_t size) :
-                page(size), next_(nullptr)
+        page(size), next_(nullptr)
         {
             struct s_page_header* p = reinterpret_cast<s_page_header*>(page_);
             p->used_ = 0;
@@ -414,8 +414,8 @@ class sfp_queue
         {
             struct s_page_header* p = reinterpret_cast<s_page_header*>(page_);
             // overflow situation is covered
-            if ((pos > size_ - offsetof(s_page_header, data)) || (size > size_ - offsetof(s_page_header, data) - pos)) //TODO use assert for optimization, then force to go debug mode to check error
-                throw bad_alloc();
+            if ((pos > size_ - offsetof(s_page_header, data)) || (size > size_ - offsetof(s_page_header, data) - pos))//TODO use assert for optimization, then force to go debug mode to check error
+            throw bad_alloc();
             memcpy(p->data + pos, d, size);
         }
         void commit(size_t pos)
@@ -441,20 +441,20 @@ class sfp_queue
     block* blocks_ = nullptr;
     block* free_blocks_ = nullptr;
     // current write position will be hold from outside,
-    mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
-    condition_variable cv_;     ///< condition variable for data available
-    block* reader_ = nullptr;    ///< rd_pos = 0 no reader rd_pos !=0 waiting for first block of data, set by writer at first block creation
+    mutex mutex_;///< global mutex use for move on reader and writers to different block, disconnect/connect readers
+    condition_variable cv_;///< condition variable for data available
+    block* reader_ = nullptr;///< rd_pos = 0 no reader rd_pos !=0 waiting for first block of data, set by writer at first block creation
     block* writer_ = nullptr;
     size_t wr_pos_ = 0;
-    size_t rd_pos_ = 0;  ///< if 0 means no reader, offset(data) means waiting for reader
-    volatile unsigned rd_status_ = 0; // 0 - no reader, // 1 - reader on // 2 - reader waiting
+    size_t rd_pos_ = 0;///< if 0 means no reader, offset(data) means waiting for reader
+    volatile unsigned rd_status_ = 0;// 0 - no reader, // 1 - reader on // 2 - reader waiting
 public:
     /**
      * Ctor
      * @max - maximum size of allocated memory for the queue
      */
     sfp_queue(size_t max) :
-            max_size_(max)
+    max_size_(max)
     {
 
     }
@@ -485,8 +485,8 @@ public:
     void getBlock(void* &p, size_t& size)
     {
         if (rd_status_ == 0)            // exception
-            return;
-        if (rd_status_ == 1)            // reading status
+        return;
+        if (rd_status_ == 1)// reading status
         {
             if ((reader_->getUsed() == rd_pos_) && (reader_->next_ != nullptr))
             {
@@ -508,7 +508,7 @@ public:
     {
         unique_lock<std::mutex> lock(mutex_);
         while (rd_status_ == 2)
-            cv_.wait(lock);
+        cv_.wait(lock);
     }
     /**
      * Delete all memory blocks allocated
@@ -541,6 +541,7 @@ public:
         free_blocks_ = b;
     }
 };
+#endif
 
 /**
  * Queue interface
@@ -795,7 +796,7 @@ public:
     }
     void Commit()
     {
-        size_t count = ( wr_ptr_ <= next_ptr_) ? next_ptr_ - wr_ptr_ :  size_ - (wr_ptr_ - next_ptr_);
+        size_t count = (wr_ptr_ <= next_ptr_) ? next_ptr_ - wr_ptr_ : size_ - (wr_ptr_ - next_ptr_);
         wr_ptr_ = next_ptr_;
         used_ += count;
         if (waiting_)
@@ -807,4 +808,31 @@ public:
     }
 }
 ;
+/**
+ * Standard queue using only one buffer that hold rd, wr pointer
+ * added notification when more than 4KB has been written
+ *
+ * less switch queue
+ */
+class Queue4: public page<>
+{
+    atomic_size_t used_;
+    uint8_t* next_ptr_;
+    size_t next_size_;
+    mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
+    condition_variable cv4kb_;     ///< condition variable for data available
+    struct tpage_hdr
+    {
+        uint32_t wr_pos;
+        uint32_t rd_pos;
+        uint8_t data[1];
+    };
+public:
+    Queue4(size_t size) :
+            page(size), used_(0), next_ptr_(page::get()), next_size_(page::size())
+    {
+    }
+};
+
+
 #endif /* QUEUE_H_ */

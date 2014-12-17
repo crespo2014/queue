@@ -20,7 +20,7 @@ list_cpp = $(wildcard *.cpp)
 %.png : %.grp
 	dot -T png -o $@ $^
 	
-%.o : %.cpp
+%.o : %.cpp $(wildcard *.h)
 	g++ -c ${includes} ${cpp_flags} -MMD -MP -MF"$(@:%.o=%.d)" -MT"$(@:%.o=%.d)" -o "$@" "$<"
 	
 Queue.out : $(patsubst %.cpp,%.o,${list_cpp})
