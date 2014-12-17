@@ -29,7 +29,29 @@
     assert(x)
 #endif
 
+
 using namespace std;
+
+/**
+ * Block of data or buffer
+ */
+class buffer
+{
+    const size_t size_;      // size of allocated buffer
+    uint8_t* const buffer_;
+public:
+    buffer(uint8_t* buffer, size_t size) :
+            size_(size), buffer_(buffer)
+    {
+
+    }
+    size_t getSize() const
+    {
+        return size_;
+    }
+};
+
+
 /**
  * Multiples consumers one producer queue
  * The queue is split in N blocks containing M elements of type T
@@ -394,12 +416,12 @@ class sfp_queue
      * class to make a list add next to base class
      */
     //forwar list
-    class block: public page
+    class buffer: public page
     {
         // friend class sfp_queue;
-        block* next_;
+        buffer* next_;
     public:
-        block(size_t size) :
+        buffer(size_t size) :
         page(size), next_(nullptr)
         {
             struct s_page_header* p = reinterpret_cast<s_page_header*>(page_);
@@ -442,13 +464,13 @@ class sfp_queue
 
     size_t max_size_ = 0;
     size_t allocated_ = 0;
-    block* blocks_ = nullptr;
-    block* free_blocks_ = nullptr;
+    buffer* blocks_ = nullptr;
+    buffer* free_blocks_ = nullptr;
     // current write position will be hold from outside,
     mutex mutex_;///< global mutex use for move on reader and writers to different block, disconnect/connect readers
     condition_variable cv_;///< condition variable for data available
-    block* reader_ = nullptr;///< rd_pos = 0 no reader rd_pos !=0 waiting for first block of data, set by writer at first block creation
-    block* writer_ = nullptr;
+    buffer* reader_ = nullptr;///< rd_pos = 0 no reader rd_pos !=0 waiting for first block of data, set by writer at first block creation
+    buffer* writer_ = nullptr;
     size_t wr_pos_ = 0;
     size_t rd_pos_ = 0;///< if 0 means no reader, offset(data) means waiting for reader
     volatile unsigned rd_status_ = 0;// 0 - no reader, // 1 - reader on // 2 - reader waiting
@@ -521,15 +543,15 @@ public:
     {
         while (blocks_ != nullptr)
         {
-            block* block = blocks_;
-            blocks_ = block->next_;
-            delete block;
+            buffer* buffer = blocks_;
+            blocks_ = buffer->next_;
+            delete buffer;
         }
         while (free_blocks_ != nullptr)
         {
-            block* block = free_blocks_;
-            free_blocks_ = block->next_;
-            delete block;
+            buffer* buffer = free_blocks_;
+            free_blocks_ = buffer->next_;
+            delete buffer;
         }
     }
     /**
@@ -538,7 +560,7 @@ public:
     void ReaderGoNext()
     {
         unique_lock<std::mutex> lock(mutex_);
-        block* b = reader_;
+        buffer* b = reader_;
         reader_ = reader_->next_;
         rd_pos_ = 0;
         b->next_ = free_blocks_;
@@ -633,21 +655,7 @@ public:
  */
 class FastQueue: public IQueue
 {
-    class block
-    {
-        const size_t size_;      // size of allocated buffer
-        uint8_t* const buffer_;
-    public:
-        block(uint8_t* buffer, size_t size) :
-                size_(size), buffer_(buffer)
-        {
 
-        }
-        size_t getSize() const
-        {
-            return size_;
-        }
-    };
     const size_t size_;      // size of allocated buffer
     uint8_t* const buffer_;  // pointer to allocated memory
 
@@ -702,7 +710,7 @@ public:
     /**
      * Reader peek data
      */
-    block Peek()
+    buffer Peek()
     {
         invariant(reading_ == 1);
         uint8_t* p = nullptr;
@@ -734,7 +742,7 @@ public:
     /*
      * Reader remove data from queue
      */
-    void Pop(block& b)
+    void Pop(buffer& b)
     {
         invariant(reading_ == 1);
         rd_ptr_ += b.getSize();
@@ -856,15 +864,45 @@ class Queue4: public page
     }
 public:
     Queue4(size_t size) :
-            page(size), writing_(false),reading_(false),buffer_(reinterpret_cast<tpage_hdr *>(page::get())),used_(0), next_ptr_(buffer_->data), next_size_(max_size())
+            page(size), writing_(false), reading_(false), buffer_(reinterpret_cast<tpage_hdr *>(page::get())), used_(0), next_ptr_(buffer_->data), next_size_(max_size())
     {
         buffer_->wr_pos = buffer_->rd_pos = offsetof(tpage_hdr, data);
     }
+    /**
+     * Reader start reading
+     */
     void startReader()
     {
+        invariant(reading_ == 0);
+        writing_ = 0;
+        reading_ = 1;
     }
+    /**
+     * Reader is disconnect
+     */
     void endReader()
     {
+        writing_ = 0;
+        reading_ = 0;
+    }
+    /**
+     * Reader peek data
+     */
+    buffer Peek()
+    {
+        invariant(reading_ == 1);
+        size_t s = 0;
+        if ((writing_ == 1) && (used_ != 0))
+        {
+            size_t w = buffer_->wr_pos;
+            size_t r = buffer_->rd_pos;
+            if (w >= r)
+                s = w - r;
+            else
+                s = buffer_->rd_last - r;
+        }
+        return
+        {   buffer_->data + buffer_->rd_pos,s};
     }
 };
 
