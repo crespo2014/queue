@@ -321,18 +321,15 @@ public:
  * Page allocator
  * Allocated the nearest page that can hold the required memory
  */
-template<class T=uint8_t>
 class page
 {
 protected:
-    void* page_;
-    size_t size_;
+    const size_t size_;
+    void* const page_;
 public:
-    page(size_t size)
+    page(size_t size) :
+            size_((size + getpagesize() - 1) / getpagesize()), page_(mmap(0, size_, PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0))
     {
-        int psize = getpagesize();
-        size_ = (size + psize - 1) / psize;
-        page_ = mmap(0, size_, PROT_WRITE | PROT_READ, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
         if (page_ == MAP_FAILED)
         {
             throw bad_alloc();
@@ -340,21 +337,28 @@ public:
     }
     ~page()
     {
-        if (munmap(page_, size_) == -1)
+        if (page_ != MAP_FAILED)
         {
-            //error log
+            if (munmap(page_, size_) == -1)
+            {
+                //error log
+            }
         }
     }
-    T* get() const
+    void* get() const
     {
-        return reinterpret_cast<T*>(page_);
+        return page_;
     }
     size_t size() const
     {
         return size_;
     }
     page(const page&) = delete;
-    page(const page&&) = delete;
+    page(const page&& p) :
+            size_(p.size_), page_(p.page_)
+    {
+
+    }
     page& operator=(const page&) = delete;
     page& operator=(const page&&) = delete;
 };
@@ -811,28 +815,57 @@ public:
 /**
  * Standard queue using only one buffer that hold rd, wr pointer
  * added notification when more than 4KB has been written
+ * consumer read at interval to peek less than 4kb data
  *
  * less switch queue
  */
-class Queue4: public page<>
+class Queue4: public page
 {
+    struct tpage_hdr
+    {
+        uint32_t wr_pos;
+        uint32_t rd_pos;
+        uint32_t rd_last;   // no circular queue. if rd > wr then last is the last data
+        uint8_t data[1];
+    };
+    volatile uint8_t writing_;      // 0 means reset is necessary, 1 - writter ready
+    volatile uint8_t reading_;      // 0 no reader online
+    tpage_hdr * const buffer_;
     atomic_size_t used_;
     uint8_t* next_ptr_;
     size_t next_size_;
     mutex mutex_;               ///< global mutex use for move on reader and writers to different block, disconnect/connect readers
     condition_variable cv4kb_;     ///< condition variable for data available
-    struct tpage_hdr
+    /**
+     * Get max size available on buffer after header
+     */
+    size_t max_size() const
     {
-        uint32_t wr_pos;
-        uint32_t rd_pos;
-        uint8_t data[1];
-    };
+        return (size() - offsetof(tpage_hdr, data) - 1);
+    }
+    /**
+     * Reset all pointer to beggining
+     */
+    void reset()
+    {
+        buffer_->wr_pos = buffer_->rd_pos = offsetof(tpage_hdr, data);
+        next_ptr_ = buffer_->data;
+        next_size_ = max_size();
+        used_ = 0;
+        writing_ = 1;
+    }
 public:
     Queue4(size_t size) :
-            page(size), used_(0), next_ptr_(page::get()), next_size_(page::size())
+            page(size), writing_(false),reading_(false),buffer_(reinterpret_cast<tpage_hdr *>(page::get())),used_(0), next_ptr_(buffer_->data), next_size_(max_size())
+    {
+        buffer_->wr_pos = buffer_->rd_pos = offsetof(tpage_hdr, data);
+    }
+    void startReader()
+    {
+    }
+    void endReader()
     {
     }
 };
-
 
 #endif /* QUEUE_H_ */
