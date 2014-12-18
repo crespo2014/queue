@@ -961,7 +961,7 @@ public:
                 size_t r = buffer_->rd_pos;
                 if (w>=r)
                 {
-                    next_size_ = max_size() - w - (r == 0 ? 1 : 0); // recalculate space at the end
+                    next_size_ = max_size() - w; // recalculate space at the end
                     if (next_size_ < size)
                     {
                         return false; //no space at the end
@@ -982,6 +982,55 @@ public:
             }
         }
         return true;
+    }
+    /**
+     * Push data to the queue
+     * Data is not ready until commit or rollback is called
+     */
+    void Push(const void* dt,const size_t len)
+    {
+        if (writing_ && reading_)
+        {
+            assert(next_size_ >= len);
+            memcpy(next_ptr_, dt, len);
+            next_size_ -= len;
+            next_ptr_ += len;
+        }
+    }
+    /**
+     * Commit data already written. this functions is call after get
+     * @param [in] count - how many data has been written
+     */
+    void Commit()
+    {
+        size_t len = 0;
+        if (next_ptr_ >= buffer_->data + buffer_->wr_pos)
+        {
+            len = next_ptr_ - buffer_->data + buffer_->wr_pos;
+            assert(buffer_->wr_pos + len <= max_size());
+            buffer_->wr_pos += len;
+            used_ += len;
+        }
+        else
+        {
+            len = next_ptr_ - buffer_->data;
+            buffer_->rd_last = buffer_->wr_pos;
+            buffer_->wr_pos = len;
+        }
+        if (used_ > 1024*4)
+            cv4kb_.notify_one();
+    }
+    /**
+     * Rool back any pending write
+     */
+    void RollBack()
+    {
+        size_t r = buffer_->rd_pos;
+        next_ptr_ = buffer_->data + buffer_->wr_pos;
+        if (r < buffer_->wr_pos)
+            next_size_ =  max_size() - buffer_->wr_pos;
+        else
+            next_size_ = r - buffer_->wr_pos;
     }
     /**
      * Check for readers. call this function to avoid written to the queue
