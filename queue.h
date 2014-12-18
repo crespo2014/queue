@@ -736,6 +736,7 @@ public:
             unique_lock<std::mutex> lock(mutex_);
             waiting_ = true;
             cv_.wait(lock);
+            waiting_ = false;
         }
     }
     /*
@@ -925,8 +926,70 @@ public:
         {
             unique_lock<std::mutex> lock(mutex_);
             waiting_ = true;
-            cv_.wait(lock);
+            cv4kb_.wait(lock);
+            waiting_ = false;
         }
+    }
+    /**
+     * Wait for a time
+     */
+    void wait_for(unsigned time_ms)
+    {
+        if ((writing_ == 0) || (used_ == 0))
+        {
+            unique_lock<std::mutex> lock(mutex_);
+            waiting_ = true;
+            cv4kb_.wait_for(lock, std::chrono::milliseconds(time_ms));
+            waiting_ = false;
+        }
+    }
+    /**
+     * Allocate size for a write operation
+     * The space need to be continuous allocate after write or before read
+     * @return true if there is space or not reader is connected
+     *
+     */
+    bool allocate(size_t size)
+    {
+        if ((writing_ == 0) || ((used_ == 0) && (next_ptr_ != buffer_->data)))
+            reset();
+        if (reading_ == 1)
+        {
+            if (size > next_size_)      // appear no space available
+            {
+                size_t w = buffer_->wr_pos;
+                size_t r = buffer_->rd_pos;
+                if (w>=r)
+                {
+                    next_size_ = max_size() - w - (r == 0 ? 1 : 0); // recalculate space at the end
+                    if (next_size_ < size)
+                    {
+                        return false; //no space at the end
+                    }
+                    if (r < size)
+                        return false; //no space at the begin
+                    //buffer_->rd_last = buffer_->wr_pos;       // when commit make wr = next and set last is next < wr
+                    next_ptr_ = buffer_->data;
+                    next_size_ = r;
+                    //buffer_->wr_pos = 0;
+                }
+                else
+                {
+                    next_size_ = r - w;
+                    if (next_size_ < size)
+                        return false;
+                }
+            }
+        }
+        return true;
+    }
+    /**
+     * Check for readers. call this function to avoid written to the queue
+     * return true - there is a reader.
+     */
+    bool isReading() const
+    {
+        return reading_;
     }
 };
 
