@@ -1041,5 +1041,9 @@ public:
         return reading_;
     }
 };
+/**
+ * User space - kernel synchronization
+ * relay - move data from user to kernel efficientely NOT GOOD
+ */
 
 #endif /* QUEUE_H_ */
