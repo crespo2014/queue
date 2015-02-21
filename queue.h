@@ -731,11 +731,13 @@ public:
      */
     void wait()
     {
+        // In order to avoid race condition . test set waiting and test again
         if ((writing_ == 0) || (used_ == 0))
         {
             unique_lock<std::mutex> lock(mutex_);
             waiting_ = true;
-            cv_.wait(lock);
+            if (used_ == 0)
+                cv_.wait(lock);
             waiting_ = false;
         }
     }
@@ -926,7 +928,8 @@ public:
         {
             unique_lock<std::mutex> lock(mutex_);
             waiting_ = true;
-            cv4kb_.wait(lock);
+            if (used_ == 0)
+                cv4kb_.wait(lock);
             waiting_ = false;
         }
     }
@@ -939,7 +942,8 @@ public:
         {
             unique_lock<std::mutex> lock(mutex_);
             waiting_ = true;
-            cv4kb_.wait_for(lock, std::chrono::milliseconds(time_ms));
+            if (used_ == 0)
+                cv4kb_.wait_for(lock, std::chrono::milliseconds(time_ms));
             waiting_ = false;
         }
     }
